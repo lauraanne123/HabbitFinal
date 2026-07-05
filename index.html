@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <meta name="theme-color" content="#1A1A2E"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="Habbit"/>
+  <link rel="manifest" href="/manifest.json"/>
+  <title>Habbit</title>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{background:#F2F0ED;-webkit-font-smoothing:antialiased;overscroll-behavior:none}
+    #root{padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.3/babel.min.js"></script>
+  <script type="text/babel" data-presets="react">
+const { useState, useRef, useEffect, useCallback } = React;
+
+const PALETTE = [
+  {bg:"#FF6B6B",lt:"#FFE5E5"},{bg:"#FF8E53",lt:"#FFE8DC"},{bg:"#FFD93D",lt:"#FFF8DC"},
+  {bg:"#C8E63A",lt:"#F4FADC"},{bg:"#6BCB77",lt:"#E3F5E5"},{bg:"#3EC9A7",lt:"#DDF5EE"},
+  {bg:"#4ECDC4",lt:"#E0F7F6"},{bg:"#45B7D1",lt:"#DCF1F8"},{bg:"#4A90E2",lt:"#DCE9F8"},
+  {bg:"#6C63FF",lt:"#E5E4FF"},{bg:"#A29BFE",lt:"#EAE8FF"},{bg:"#D36EFE",lt:"#F5DCFF"},
+  {bg:"#FF6FD8",lt:"#FFE0F5"},{bg:"#FF8FAB",lt:"#FFE4EC"},{bg:"#F7A072",lt:"#FEF0E8"},
+  {bg:"#E8B4B8",lt:"#FAF0F1"},{bg:"#C9A96E",lt:"#F5EEE0"},{bg:"#8BC34A",lt:"#EBF5D9"},
+  {bg:"#26A69A",lt:"#D9F0EE"},{bg:"#5C6BC0",lt:"#E3E5F6"},{bg:"#EF5350",lt:"#FDECEC"},
+  {bg:"#F06292",lt:"#FDE8F0"},{bg:"#AB47BC",lt:"#F2E4F6"},{bg:"#42A5F5",lt:"#E1F2FD"},
+  {bg:"#26C6DA",lt:"#DDF7FB"},{bg:"#66BB6A",lt:"#E4F5E5"},{bg:"#D4E157",lt:"#F7FAD8"},
+  {bg:"#FFA726",lt:"#FFF0D9"},{bg:"#8D6E63",lt:"#F0E9E7"},{bg:"#78909C",lt:"#E8ECEE"},
+];
+const ICONS = [
+  "💊","🏃","🧘","📖","💧","🥗","😴","🎵","✍️","🧹",
+  "🏋️","🚴","🛁","☀️","🌙","🧠","❤️","🎯","📝","🍎",
+  "🧘‍♀️","🌿","🚶","🏊","🎨","🧩","💪","🌟","🥤","🦷",
+];
+const DAY_NAMES  = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const MONTHS     = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const MONTH_ABBR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const STORAGE_KEY = "habittracker_v7";
+
+const DEFAULT_HABITS = [
+  {id:1,name:"Vitamin D",  group:"Medicine",freq:{unit:"day",  times:1},colorIdx:8, iconIdx:0, pinnedDays:[],status:"active"},
+  {id:2,name:"Omega-3",    group:"Medicine",freq:{unit:"day",  times:1},colorIdx:9, iconIdx:0, pinnedDays:[],status:"active"},
+  {id:3,name:"Morning Run",group:"Fitness", freq:{unit:"week", times:3},colorIdx:4, iconIdx:1, pinnedDays:[],status:"active"},
+  {id:4,name:"Meditate",   group:"Wellness",freq:{unit:"day",  times:1},colorIdx:2, iconIdx:2, pinnedDays:[],status:"active"},
+  {id:5,name:"Read",       group:"Mind",    freq:{unit:"month",times:8},colorIdx:6, iconIdx:3, pinnedDays:[],status:"active"},
+];
+
+const iStyle = { width:"100%", padding:"11px 13px", borderRadius:10, border:"2px solid #eee", fontSize:15, fontFamily:"inherit", outline:"none", boxSizing:"border-box", background:"#fff" };
+const menuItemStyle = { background:"none", border:"none", fontSize:14, padding:"10px 4px", cursor:"pointer", textAlign:"left", width:"100%", display:"block", color:"#333" };
+
+function loadState() { try { const r = localStorage.getItem(STORAGE_KEY); return r ? JSON.parse(r) : null; } catch { return null; } }
+function saveState(s) { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch {} }
+
+function getDIM(y,m) { return new Date(y,m+1,0).getDate(); }
+function getFirstDay(y,m) { return new Date(y,m,1).getDay(); }
+function fmtDate(d) { return d.toISOString().slice(0,10); }
+function addDays(base,n) { const d=new Date(base); d.setDate(d.getDate()+n); return fmtDate(d); }
+function mkStr(y,m) { return `${y}-${String(m+1).padStart(2,"0")}`; }
+function blankForm() { return {name:"",group:"",newGroup:"",freqUnit:"day",freqTimes:1,colorIdx:0,iconIdx:0,pinnedDays:[]}; }
+function dateFromYMD(y,m,d) { return new Date(y,m,d); }
+function dowOf(y,m,d) { return new Date(y,m,d).getDay(); }
+
+function computeTarget(freq,dim) {
+  if(freq.unit==="day")   return freq.times*dim;
+  if(freq.unit==="week")  return Math.round((dim/7)*freq.times);
+  if(freq.unit==="total") return freq.times;
+  return freq.times;
+}
+function freqLabel(freq,pinnedDays) {
+  if(freq.unit==="total") return `${freq.times}× total`;
+  if(pinnedDays&&pinnedDays.length>0) return pinnedDays.map(d=>DAY_NAMES[d]).join(", ");
+  if(freq.unit==="day")  return freq.times===1?"Daily":`${freq.times}× per day`;
+  if(freq.unit==="week") return `${freq.times}× per week`;
+  return `${freq.times}× per month`;
+}
+function freqSortScore(h) { if(h.freq.unit==="total") return -1; return computeTarget(h.freq,30); }
+function sortHabits(arr) { return [...arr].sort((a,b)=>freqSortScore(b)-freqSortScore(a)); }
+function getPaceFraction(done,target,refDay,dim) {
+  if(!target||!dim) return 1;
+  const exp=(refDay/dim)*target;
+  return exp>0?Math.min(1.3,done/exp):1;
+}
+function isMutedOnDate(muteRanges,hid,dateStr) { return (muteRanges[hid]||[]).some(r=>r.start<=dateStr&&dateStr<=r.end); }
+function isMutedInMonth(muteRanges,hid,mk) { return (muteRanges[hid]||[]).some(r=>r.start.slice(0,7)<=mk&&mk<=r.end.slice(0,7)); }
+
+// ── Sheet ──────────────────────────────────────────────────────────────────────
+function Sheet({title,onClose,children}) {
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(20,20,40,0.55)",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:300}}
+      onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+      <div style={{background:"#fff",borderRadius:"20px 20px 0 0",padding:"22px 20px 36px",width:"100%",maxWidth:520,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 -8px 40px rgba(0,0,0,0.18)"}}>
+        <div style={{width:36,height:4,background:"#ddd",borderRadius:2,margin:"0 auto 18px"}}/>
+        <div style={{fontWeight:800,fontSize:18,marginBottom:18}}>{title}</div>
+        {children}
+      </div>
+    </div>
+  );
+}
+function MField({label,children}) {
+  return <div style={{marginBottom:18}}><div style={{fontSize:10,fontWeight:700,letterSpacing:1.5,textTransform:"uppercase",color:"#999",marginBottom:8}}>{label}</div>{children}</div>;
+}
+
+// ── DotStrip ───────────────────────────────────────────────────────────────────
+function DotStrip({count,color,bgColor,isSel}) {
+  if(count===0) return <div style={{fontSize:11,color,fontWeight:700,padding:"4px 0"}}>✓ Goal met!</div>;
+  return (
+    <div style={{position:"relative"}}>
+      <div style={{display:"flex",gap:5,overflowX:"auto",paddingBottom:3,paddingTop:1,scrollbarWidth:"none",WebkitOverflowScrolling:"touch"}}>
+        {Array.from({length:count}).map((_,i)=>(
+          <div key={i} style={{width:12,height:12,borderRadius:"50%",background:color,flexShrink:0,boxShadow:isSel?"0 0 0 2px rgba(0,0,0,0.15)":"0 1px 2px rgba(0,0,0,0.12)"}}/>
+        ))}
+      </div>
+      <div style={{position:"absolute",top:0,right:0,bottom:3,width:36,background:`linear-gradient(to right,transparent,${bgColor||"#fff"})`,pointerEvents:"none"}}/>
+    </div>
+  );
+}
+
+// ── DayPicker ──────────────────────────────────────────────────────────────────
+function DayPicker({value,onChange}) {
+  return (
+    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+      {DAY_NAMES.map((d,i)=>(
+        <button key={i} onClick={()=>{const n=value.includes(i)?value.filter(x=>x!==i):[...value,i];onChange(n);}}
+          style={{padding:"6px 10px",borderRadius:8,border:"1.5px solid",fontSize:12,fontWeight:700,cursor:"pointer",
+            borderColor:value.includes(i)?"#1A1A2E":"#eee",background:value.includes(i)?"#1A1A2E":"#fff",color:value.includes(i)?"#fff":"#888"}}>{d}</button>
+      ))}
+    </div>
+  );
+}
+
+// ── DeleteButton ───────────────────────────────────────────────────────────────
+function DeleteButton({onConfirm}) {
+  const [stage,setStage]=useState(0); const timer=useRef(null);
+  function step() {
+    if(stage===0){setStage(1);timer.current=setTimeout(()=>setStage(0),3000);}
+    else if(stage===1){clearTimeout(timer.current);setStage(2);timer.current=setTimeout(()=>setStage(0),3000);}
+    else{clearTimeout(timer.current);onConfirm();}
+  }
+  return (
+    <div>
+      {stage===0&&<button onClick={step} style={{...menuItemStyle,color:"#E05252"}}>🗑 Delete</button>}
+      {stage===1&&<button onClick={step} style={{...menuItemStyle,color:"#E05252",fontWeight:700}}>Really delete?</button>}
+      {stage===2&&<button onClick={step} style={{...menuItemStyle,background:"#E05252",color:"#fff",fontWeight:700,borderRadius:8,padding:"8px 10px"}}>Yes, delete</button>}
+    </div>
+  );
+}
+
+// ── HabitMenu ─────────────────────────────────────────────────────────────────
+function HabitMenu({habit,onEdit,onArchive,onDelete,onPause,isMuted,onUnmute}) {
+  const [open,setOpen]=useState(false); const ref=useRef(null);
+  useEffect(()=>{
+    if(!open)return;
+    function h(e){if(ref.current&&!ref.current.contains(e.target))setOpen(false);}
+    document.addEventListener("mousedown",h); document.addEventListener("touchstart",h);
+    return()=>{document.removeEventListener("mousedown",h); document.removeEventListener("touchstart",h);};
+  },[open]);
+  return (
+    <div ref={ref} style={{position:"relative"}} onClick={e=>e.stopPropagation()}>
+      <button onClick={e=>{e.stopPropagation();setOpen(o=>!o);}}
+        style={{background:"none",border:"none",color:"#bbb",cursor:"pointer",fontSize:20,padding:"2px 6px",lineHeight:1}}>⋯</button>
+      {open&&(
+        <div style={{position:"absolute",right:0,top:"calc(100% + 4px)",background:"#fff",borderRadius:14,boxShadow:"0 8px 32px rgba(0,0,0,0.15)",padding:"6px 12px",minWidth:170,zIndex:500}}>
+          <button onClick={()=>{setOpen(false);onEdit();}} style={menuItemStyle}>✏️ Edit</button>
+          <div style={{height:1,background:"#f0f0f0",margin:"2px 0"}}/>
+          {isMuted
+            ?<button onClick={()=>{setOpen(false);onUnmute();}} style={menuItemStyle}>▶ Resume</button>
+            :<button onClick={()=>{setOpen(false);onPause();}} style={menuItemStyle}>⏸ Pause…</button>}
+          <div style={{height:1,background:"#f0f0f0",margin:"2px 0"}}/>
+          <button onClick={()=>{setOpen(false);onArchive();}} style={{...menuItemStyle,color:"#888"}}>📁 Archive</button>
+          <div style={{height:1,background:"#f0f0f0",margin:"2px 0"}}/>
+          <DeleteButton onConfirm={()=>{setOpen(false);onDelete();}}/>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── PausePicker ───────────────────────────────────────────────────────────────
+function PausePicker({habit,onConfirm,onClose}) {
+  const now=new Date(); const todayISO=fmtDate(now);
+  const eomISO=fmtDate(new Date(now.getFullYear(),now.getMonth()+1,0));
+  const nm=new Date(now.getFullYear(),now.getMonth()+1,1);
+  const nmEndISO=fmtDate(new Date(nm.getFullYear(),nm.getMonth()+1,0));
+  const [customEnd,setCustomEnd]=useState(eomISO);
+  const presets=[
+    {label:"Rest of this month",end:eomISO},{label:"Until next month",end:nmEndISO},
+    {label:"7 days",end:addDays(todayISO,6)},{label:"14 days",end:addDays(todayISO,13)},
+    {label:"30 days",end:addDays(todayISO,29)},{label:"Indefinitely",end:"2099-12-31"},
+  ];
+  return (
+    <Sheet title={`Pause "${habit.name}"`} onClose={onClose}>
+      <div style={{fontSize:12,color:"#aaa",marginBottom:16}}>Missed days won't count against your pace.</div>
+      <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:20}}>
+        {presets.map(p=>(
+          <button key={p.label} onClick={()=>onConfirm(todayISO,p.end)}
+            style={{padding:"13px 16px",borderRadius:12,border:"1.5px solid #eee",background:"#fff",fontSize:14,textAlign:"left",cursor:"pointer",fontWeight:500,color:"#1A1A2E"}}>
+            {p.label}<span style={{float:"right",fontSize:11,color:"#bbb"}}>{p.end==="2099-12-31"?"until resumed":`until ${p.end.slice(5).replace("-","/")}`}</span>
+          </button>
+        ))}
+      </div>
+      <div style={{borderTop:"1px solid #f0f0f0",paddingTop:16}}>
+        <div style={{fontSize:11,fontWeight:700,letterSpacing:1,textTransform:"uppercase",color:"#aaa",marginBottom:10}}>Custom end date</div>
+        <div style={{display:"flex",gap:10,alignItems:"center"}}>
+          <input type="date" value={customEnd} min={todayISO} onChange={e=>setCustomEnd(e.target.value)} style={{...iStyle,flex:1}}/>
+          <button onClick={()=>onConfirm(todayISO,customEnd)}
+            style={{padding:"11px 18px",borderRadius:10,border:"none",background:"#1A1A2E",color:"#fff",fontWeight:700,cursor:"pointer",fontSize:14,flexShrink:0}}>Pause</button>
+        </div>
+      </div>
+    </Sheet>
+  );
+}
+
+// ── HabitForm ─────────────────────────────────────────────────────────────────
+function HabitForm({form,setForm,existingGroups,daysInMonth,onSubmit,onCancel,submitLabel}) {
+  const isTotal=form.freqUnit==="total";
+  const preview=isTotal?"":computeTarget({unit:form.freqUnit,times:Math.max(1,Number(form.freqTimes))},daysInMonth);
+  const pinnedLabel=form.pinnedDays.length>0?form.pinnedDays.map(d=>DAY_NAMES[d]).join(", "):null;
+  return (
+    <div>
+      <MField label="Name"><input autoFocus value={form.name} placeholder="e.g. Vitamin C" onChange={e=>setForm(f=>({...f,name:e.target.value}))} onKeyDown={e=>{if(e.key==="Enter")onSubmit();}} style={iStyle}/></MField>
+      <MField label="Group">
+        <select value={form.group} onChange={e=>setForm(f=>({...f,group:e.target.value}))} style={iStyle}>
+          <option value="">— select or create —</option>
+          {existingGroups.map(g=><option key={g} value={g}>{g}</option>)}
+          <option value="__new__">+ New group…</option>
+        </select>
+        {form.group==="__new__"&&<input value={form.newGroup} placeholder="Group name" onChange={e=>setForm(f=>({...f,newGroup:e.target.value}))} style={{...iStyle,marginTop:8}}/>}
+      </MField>
+      <MField label="Frequency">
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          {!isTotal&&<input type="number" min={1} max={99} value={form.freqTimes} onChange={e=>setForm(f=>({...f,freqTimes:e.target.value}))} style={{...iStyle,width:64,textAlign:"center"}}/>}
+          {!isTotal&&<span style={{fontSize:13,color:"#555",whiteSpace:"nowrap"}}>times per</span>}
+          <select value={form.freqUnit} onChange={e=>setForm(f=>({...f,freqUnit:e.target.value,pinnedDays:[]}))} style={{...iStyle,flex:1}}>
+            <option value="day">Day</option><option value="week">Week</option><option value="month">Month</option><option value="total">Total (no period)</option>
+          </select>
+        </div>
+        {isTotal&&<div style={{marginTop:8,display:"flex",gap:8,alignItems:"center"}}><input type="number" min={1} value={form.freqTimes} onChange={e=>setForm(f=>({...f,freqTimes:e.target.value}))} style={{...iStyle,width:80,textAlign:"center"}}/><span style={{fontSize:13,color:"#555"}}>total completions</span></div>}
+        <div style={{fontSize:11,color:"#aaa",marginTop:6}}>{isTotal?`Complete ${form.freqTimes}× ever`:pinnedLabel?`Pinned: ${pinnedLabel}`:`≈ ${preview} dots this month`}</div>
+      </MField>
+      {form.freqUnit==="week"&&<MField label="Pin to days (optional)"><DayPicker value={form.pinnedDays} onChange={v=>setForm(f=>({...f,pinnedDays:v,freqTimes:v.length||f.freqTimes}))}/><div style={{fontSize:11,color:"#aaa",marginTop:6}}>{form.pinnedDays.length>0?"Will count only on selected days":"Log freely on any day"}</div></MField>}
+      <MField label="Icon"><div style={{display:"flex",flexWrap:"wrap",gap:7}}>{ICONS.map((ic,i)=><div key={i} onClick={()=>setForm(f=>({...f,iconIdx:i}))} style={{width:36,height:36,borderRadius:9,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,cursor:"pointer",background:form.iconIdx===i?"#1A1A2E":"#f3f3f3"}}>{ic}</div>)}</div></MField>
+      <MField label="Color"><div style={{display:"flex",flexWrap:"wrap",gap:8}}>{PALETTE.map((c,i)=><div key={i} onClick={()=>setForm(f=>({...f,colorIdx:i}))} style={{width:26,height:26,borderRadius:"50%",background:c.bg,cursor:"pointer",outline:form.colorIdx===i?"3px solid #1A1A2E":"none",outlineOffset:2}}/>)}</div></MField>
+      <div style={{display:"flex",gap:10,marginTop:24}}>
+        <button onClick={onCancel} style={{flex:1,padding:14,borderRadius:12,border:"2px solid #eee",background:"#fff",fontWeight:600,cursor:"pointer",fontSize:15,color:"#666"}}>Cancel</button>
+        <button onClick={onSubmit} style={{flex:1,padding:14,borderRadius:12,border:"none",background:"#1A1A2E",color:"#fff",fontWeight:700,cursor:"pointer",fontSize:15}}>{submitLabel}</button>
+      </div>
+    </div>
+  );
+}
+
+// ── YearRow ───────────────────────────────────────────────────────────────────
+function YearRow({row,year}) {
+  const [open,setOpen]=useState(false); const now=new Date();
+  return (
+    <div style={{marginBottom:10}}>
+      <div onClick={()=>setOpen(o=>!o)} style={{background:"#F9F7F4",borderRadius:12,padding:"11px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
+        <div style={{width:26,height:26,borderRadius:8,background:row.c.lt,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,border:`1.5px solid ${row.c.bg}44`,flexShrink:0}}>{row.icon}</div>
+        <div style={{flex:1}}><div style={{fontWeight:700,fontSize:13}}>{row.name}</div><div style={{fontSize:10,color:"#aaa"}}>{row.yearTotal} of {row.yearTarget}{row.freq.unit==="total"?" total":""}</div></div>
+        <div style={{width:56,height:5,background:"#E8E8E8",borderRadius:3,overflow:"hidden",flexShrink:0}}><div style={{height:"100%",width:`${row.pct*100}%`,background:row.c.bg,borderRadius:3}}/></div>
+        <div style={{fontSize:11,color:"#aaa",fontWeight:600,width:30,textAlign:"right"}}>{Math.round(row.pct*100)}%</div>
+        <div style={{fontSize:11,color:"#ccc"}}>{open?"▴":"▾"}</div>
+      </div>
+      {open&&(
+        <div style={{background:"#fff",borderRadius:"0 0 12px 12px",padding:"10px 14px 12px",boxShadow:"0 2px 8px rgba(0,0,0,0.04)",marginTop:-4}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
+            {row.monthData.map((md,mi)=>{
+              const isFuture=new Date(year,mi,1)>now;
+              const mpct=(md.target>0&&!isFuture)?Math.min(1,md.done/md.target):null;
+              return (
+                <div key={mi} style={{textAlign:"center"}}>
+                  <div style={{fontSize:9,color:"#bbb",fontWeight:700,letterSpacing:0.5,marginBottom:3}}>{MONTH_ABBR[mi]}</div>
+                  <div style={{height:26,background:"#F2F0ED",borderRadius:5,overflow:"hidden",position:"relative"}}>{mpct!==null&&<div style={{position:"absolute",bottom:0,left:0,right:0,height:`${mpct*100}%`,background:row.c.bg,opacity:0.8}}/>}</div>
+                  <div style={{fontSize:9,color:"#aaa",marginTop:2}}>{isFuture?"—":md.done}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+function YearlyStats({habits,completions,year,onClose}) {
+  const rows=habits.map(h=>{
+    const c=PALETTE[h.colorIdx%PALETTE.length]; const icon=ICONS[h.iconIdx%ICONS.length];
+    let yearTotal=0;
+    const monthData=Array.from({length:12},(_,m)=>{
+      const mk=mkStr(year,m); const done=(completions[mk]?.[h.id]||[]).length;
+      const target=h.freq.unit==="total"?h.freq.times:computeTarget(h.freq,getDIM(year,m));
+      yearTotal+=done; return{done,target};
+    });
+    const yearTarget=h.freq.unit==="total"?h.freq.times:monthData.reduce((s,m)=>s+m.target,0);
+    const pct=yearTarget>0?Math.min(1,yearTotal/yearTarget):1;
+    return{...h,c,icon,monthData,yearTotal,yearTarget,pct};
+  });
+  return <Sheet title={`${year} Overview`} onClose={onClose}><div style={{fontSize:11,color:"#aaa",marginBottom:16}}>Tap a habit to see monthly detail.</div>{rows.map(row=><YearRow key={row.id} row={row} year={year}/>)}</Sheet>;
+}
+
+// ── DayView — the "today" list for any arbitrary date ─────────────────────────
+function DayView({y,m,d,habits,completions,muteRanges,onToggle,onClose}) {
+  const mk=mkStr(y,m); const dim=getDIM(y,m); const dow=dowOf(y,m,d);
+  const dateStr=`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+  const isActualToday=(()=>{const n=new Date();return n.getDate()===d&&n.getMonth()===m&&n.getFullYear()===y;})();
+
+  const activeHabits=sortHabits(habits.filter(h=>h.status==="active"));
+
+  const habitList=activeHabits.filter(h=>!isMutedOnDate(muteRanges,h.id,dateStr)&&h.freq.unit!=="total").map(h=>{
+    const days=(completions[mk]?.[h.id])||[];
+    const done=days.includes(d);
+    const doneCount=days.length;
+    const target=computeTarget(h.freq,dim);
+    const expected=(d/dim)*target;
+    const behind=doneCount<expected-0.5;
+    const pinned=(h.pinnedDays||[]).includes(dow);
+    const due=h.freq.unit==="day"||pinned||behind;
+    return{...h,done,due,behind};
+  });
+  const totalHabits=activeHabits.filter(h=>h.freq.unit==="total").map(h=>{
+    const allDone=Object.values(completions).reduce((s,mc)=>s+(mc[h.id]?.length||0),0);
+    const days=(completions[mk]?.[h.id])||[];
+    const done=days.includes(d);
+    return{...h,done,due:allDone<h.freq.times,isTotal:true,allDone};
+  });
+
+  const due=[...habitList.filter(h=>h.due),...totalHabits.filter(h=>h.due)];
+  const notDue=[...habitList.filter(h=>!h.due),...totalHabits.filter(h=>!h.due)];
+
+  const label=isActualToday?"Today":`${DAY_NAMES[dow]}, ${MONTHS[m]} ${d}`;
+
+  function HabitRow({habit,large}) {
+    const c=PALETTE[habit.colorIdx%PALETTE.length]; const icon=ICONS[habit.iconIdx%ICONS.length];
+    const done=habit.done;
+    return (
+      <div onClick={()=>onToggle(habit.id,mk,d)}
+        style={{display:"flex",alignItems:"center",gap:10,background:done?c.lt:"#fff",borderRadius:13,padding:large?"12px 14px":"10px 12px",marginBottom:7,
+          boxShadow:done?`0 0 0 1.5px ${c.bg}44`:"0 1px 3px rgba(0,0,0,0.06)",cursor:"pointer",transition:"all .12s"}}>
+        <div style={{width:large?24:20,height:large?24:20,borderRadius:"50%",flexShrink:0,border:`2.5px solid ${done?c.bg:"#ddd"}`,background:done?c.bg:"transparent",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#fff"}}>{done?"✓":""}</div>
+        <div style={{width:large?32:26,height:large?32:26,borderRadius:8,background:c.lt,display:"flex",alignItems:"center",justifyContent:"center",fontSize:large?17:14,flexShrink:0,border:`1.5px solid ${c.bg}33`}}>{icon}</div>
+        <div style={{flex:1}}>
+          <div style={{fontWeight:700,fontSize:large?14:13,textDecoration:done?"line-through":"none",color:done?"#bbb":"#1A1A2E"}}>{habit.name}</div>
+          <div style={{fontSize:10,color:"#ccc"}}>{habit.isTotal?`${habit.allDone}/${habit.freq.times} total`:freqLabel(habit.freq,habit.pinnedDays)}{habit.behind&&!done?<span style={{color:"#90A4AE"}}> · a little behind</span>:null}</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <Sheet title={label} onClose={onClose}>
+      {due.length>0&&(
+        <div style={{marginBottom:18}}>
+          <div style={{fontSize:10,fontWeight:700,letterSpacing:1.5,textTransform:"uppercase",color:"#aaa",marginBottom:10}}>Due</div>
+          {due.map(h=><HabitRow key={h.id} habit={h} large/>)}
+        </div>
+      )}
+      {notDue.length>0&&(
+        <div>
+          <div style={{fontSize:10,fontWeight:700,letterSpacing:1.5,textTransform:"uppercase",color:"#ccc",marginBottom:10}}>Not Due</div>
+          {notDue.map(h=><HabitRow key={h.id} habit={h} large={false}/>)}
+        </div>
+      )}
+    </Sheet>
+  );
+}
+
+// ── Mini day list (for bottom of calendar) ─────────────────────────────────────
+function MiniDayList({y,m,d,habits,completions,muteRanges,onToggle,onOpenDay}) {
+  const mk=mkStr(y,m); const dim=getDIM(y,m); const dow=dowOf(y,m,d);
+  const dateStr=`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+  const activeHabits=sortHabits(habits.filter(h=>h.status==="active"));
+  const habitList=activeHabits.filter(h=>!isMutedOnDate(muteRanges,h.id,dateStr)).map(h=>{
+    const days=(completions[mk]?.[h.id])||[];
+    const done=days.includes(d);
+    const doneCount=days.length;
+    const target=computeTarget(h.freq,dim);
+    const expected=(d/dim)*target;
+    const behind=doneCount<expected-0.5;
+    const pinned=(h.pinnedDays||[]).includes(dow);
+    const due=h.freq.unit==="day"||pinned||behind||h.freq.unit==="total";
+    return{...h,done,due};
+  });
+  const due=habitList.filter(h=>h.due);
+  const notDue=habitList.filter(h=>!h.due);
+  const doneCount=habitList.filter(h=>h.done).length;
+  const label=`${DAY_NAMES[dow]}, ${MONTHS[m]} ${d}`;
+
+  return (
+    <div style={{borderTop:"2px solid #E8E6E3",marginTop:16,paddingTop:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <div>
+          <div style={{fontWeight:800,fontSize:15}}>{label}</div>
+          <div style={{fontSize:11,color:"#aaa"}}>{doneCount}/{habitList.length} done</div>
+        </div>
+        <button onClick={onOpenDay}
+          style={{fontSize:11,fontWeight:700,padding:"5px 12px",borderRadius:9,border:"1.5px solid #ddd",background:"#fff",color:"#555",cursor:"pointer"}}>
+          Open day ↗
+        </button>
+      </div>
+      {due.map(habit=>{
+        const c=PALETTE[habit.colorIdx%PALETTE.length]; const icon=ICONS[habit.iconIdx%ICONS.length];
+        const done=habit.done;
+        return (
+          <div key={habit.id} onClick={()=>onToggle(habit.id,mk,d)}
+            style={{display:"flex",alignItems:"center",gap:10,background:done?c.lt:"#fff",borderRadius:12,padding:"10px 12px",marginBottom:6,
+              boxShadow:done?`0 0 0 1.5px ${c.bg}44`:"0 1px 3px rgba(0,0,0,0.05)",cursor:"pointer",transition:"all .12s",opacity:done?0.75:1}}>
+            <div style={{width:20,height:20,borderRadius:"50%",flexShrink:0,border:`2px solid ${done?c.bg:"#ddd"}`,background:done?c.bg:"transparent",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:"#fff"}}>{done?"✓":""}</div>
+            <div style={{width:26,height:26,borderRadius:7,background:c.lt,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0}}>{icon}</div>
+            <div style={{flex:1}}>
+              <div style={{fontWeight:700,fontSize:13,textDecoration:done?"line-through":"none",color:done?"#bbb":"#1A1A2E"}}>{habit.name}</div>
+            </div>
+          </div>
+        );
+      })}
+      {notDue.length>0&&<div style={{fontSize:10,color:"#ccc",marginTop:4,paddingLeft:2}}>{notDue.length} more not due today</div>}
+    </div>
+  );
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────
+export default function HabitTracker() {
+  const now=new Date(); const todayD=now.getDate(); const todayM=now.getMonth(); const todayY=now.getFullYear();
+  const todayDow=now.getDay(); const todayISO=fmtDate(now);
+
+  const [habits,setHabits]          =useState(()=>{const s=loadState();return(s?.habits||DEFAULT_HABITS).map(h=>({pinnedDays:[],status:"active",...h}));});
+  const [completions,setCompletions]=useState(()=>{const s=loadState();return s?.completions||{};});
+  const [muteRanges,setMuteRanges]  =useState(()=>{const s=loadState();return s?.muteRanges||{};});
+  const nextId=useRef(DEFAULT_HABITS.length+1);
+  useEffect(()=>{const s=loadState();if(s?.nextId)nextId.current=s.nextId;},[]);
+
+  const [year,setYear]     =useState(todayY);
+  const [month,setMonth]   =useState(todayM);
+  const [view,setView]     =useState("today");
+  const [selected,setSelected]=useState(null);   // habit id being logged in calendar
+  const [collapsed,setCollapsed]=useState({});
+  const [modal,setModal]   =useState(null);
+  const [form,setForm]     =useState(()=>blankForm());
+  const [showArchived,setShowArchived]=useState(false);
+  const [showYearly,setShowYearly]=useState(false);
+  // Today view: which day are we viewing (defaults to real today)
+  const [viewDay,setViewDay]=useState({y:todayY,m:todayM,d:todayD});
+  // Calendar: which day is selected for the mini day list & long-press day view
+  const [calDay,setCalDay]=useState(null); // {y,m,d} or null
+  const [dayViewOpen,setDayViewOpen]=useState(false); // full DayView sheet open
+  const longPressTimer=useRef(null);
+
+  useEffect(()=>{saveState({habits,completions,muteRanges,nextId:nextId.current});},[habits,completions,muteRanges]);
+
+  function openAdd(){setForm(blankForm());setModal({mode:"add"});}
+  function openEdit(h){setForm({name:h.name,group:h.group,newGroup:"",freqUnit:h.freq.unit,freqTimes:h.freq.times,colorIdx:h.colorIdx,iconIdx:h.iconIdx,pinnedDays:h.pinnedDays||[]});setModal({mode:"edit",habit:h});}
+  function closeModal(){setModal(null);}
+  function resolveGroup(){return(form.group==="__new__"?form.newGroup.trim():form.group)||"General";}
+  function submitAdd(){const name=form.name.trim();if(!name)return;const id=nextId.current++;setHabits(p=>[...p,{id,name,group:resolveGroup(),freq:{unit:form.freqUnit,times:Math.max(1,Number(form.freqTimes))},colorIdx:form.colorIdx,iconIdx:form.iconIdx,pinnedDays:form.pinnedDays,status:"active"}]);closeModal();}
+  function submitEdit(){const name=form.name.trim();if(!name)return;setHabits(p=>p.map(h=>h.id===modal.habit.id?{...h,name,group:resolveGroup(),freq:{unit:form.freqUnit,times:Math.max(1,Number(form.freqTimes))},colorIdx:form.colorIdx,iconIdx:form.iconIdx,pinnedDays:form.pinnedDays}:h));closeModal();}
+  function archiveHabit(hid){setHabits(p=>p.map(h=>h.id===hid?{...h,status:"archived"}:h));}
+  function restoreHabit(hid){setHabits(p=>p.map(h=>h.id===hid?{...h,status:"active"}:h));}
+  function deleteHabit(hid){setHabits(p=>p.filter(h=>h.id!==hid));}
+  function applyPause(hid,start,end){setMuteRanges(p=>({...p,[hid]:[...(p[hid]||[]),{start,end}]}));}
+  function unmute(hid){setMuteRanges(p=>({...p,[hid]:(p[hid]||[]).filter(r=>r.end<todayISO)}));}
+  function isHabitMuted(hid){return isMutedOnDate(muteRanges,hid,todayISO);}
+  function isHabitMutedMK(hid,mk){return isMutedInMonth(muteRanges,hid,mk);}
+
+  const mk=mkStr(year,month); const todayMK=mkStr(todayY,todayM);
+  const dim=getDIM(year,month); const firstDay=getFirstDay(year,month);
+  const refDay=(year===todayY&&month===todayM)?todayD:dim;
+  const todayDim=getDIM(todayY,todayM);
+
+  function getHabitDays(hid,key){return completions[key||mk]?.[hid]||[];}
+  function getTarget(h,d){return computeTarget(h.freq,d||dim);}
+  function getAllTimeDone(hid){return Object.values(completions).reduce((s,mc)=>s+(mc[hid]?.length||0),0);}
+  function getRemaining(h){return h.freq.unit==="total"?Math.max(0,h.freq.times-getAllTimeDone(h.id)):Math.max(0,getTarget(h)-getHabitDays(h.id).length);}
+
+  // Generic toggle for any day in any month key
+  function toggleDayCompletion(hid,key,day) {
+    setCompletions(p=>{
+      const mc={...(p[key]||{})};
+      const days=[...(mc[hid]||[])];
+      const i=days.indexOf(day);
+      if(i!==-1)days.splice(i,1);else days.push(day);
+      mc[hid]=days.sort((a,b)=>a-b);
+      return{...p,[key]:mc};
+    });
+  }
+
+  // Calendar tap: if a habit is selected, toggle that habit on this day
+  function tapDay(day) {
+    if(!selected)return;
+    toggleDayCompletion(selected,mk,day);
+  }
+
+  function prevMonth(){if(month===0){setYear(y=>y-1);setMonth(11);}else setMonth(m=>m-1);setCalDay(null);}
+  function nextMonth(){if(month===11){setYear(y=>y+1);setMonth(0);}else setMonth(m=>m+1);setCalDay(null);}
+
+  // Today view: navigate days
+  function prevDay(){
+    setViewDay(({y,m,d})=>{
+      if(d>1)return{y,m,d:d-1};
+      const pm=m===0?11:m-1; const py=m===0?y-1:y;
+      return{y:py,m:pm,d:getDIM(py,pm)};
+    });
+  }
+  function nextDay(){
+    const {y,m,d}=viewDay;
+    const maxD=getDIM(y,m);
+    if(d<maxD)setViewDay({y,m,d:d+1});
+    else{const nm=m===11?0:m+1;const ny=m===11?y+1:y;setViewDay({y:ny,m:nm,d:1});}
+  }
+  const isViewingToday=viewDay.y===todayY&&viewDay.m===todayM&&viewDay.d===todayD;
+
+  // Long press handlers for calendar days
+  function handleDayPressStart(day) {
+    longPressTimer.current=setTimeout(()=>{
+      setCalDay({y:year,m:month,d:day});
+      setDayViewOpen(true);
+    },500);
+  }
+  function handleDayPressEnd() { clearTimeout(longPressTimer.current); }
+
+  // Calendar tap (short press): select day for mini list, or log if habit selected
+  function handleDayTap(day) {
+    if(selected){tapDay(day);return;}
+    setCalDay(prev=>(prev&&prev.d===day&&prev.m===month&&prev.y===year)?null:{y:year,m:month,d:day});
+  }
+
+  const existingGroups=[...new Set(habits.map(h=>h.group))];
+  const activeHabits=sortHabits(habits.filter(h=>h.status==="active"));
+  const archivedHabits=sortHabits(habits.filter(h=>h.status==="archived"));
+  const groups=[...new Set(activeHabits.map(h=>h.group))];
+
+  const cells=[];
+  for(let i=0;i<firstDay;i++)cells.push(null);
+  for(let d=1;d<=dim;d++)cells.push(d);
+
+  const isToday=d=>d===todayD&&month===todayM&&year===todayY;
+  const selHabit=selected?habits.find(h=>h.id===selected):null;
+  const selColor=selHabit?PALETTE[selHabit.colorIdx%PALETTE.length].bg:null;
+
+  // Today view computed data for viewDay
+  const vMK=mkStr(viewDay.y,viewDay.m);
+  const vDim=getDIM(viewDay.y,viewDay.m);
+
+  // Pace
+  const paceHabits=sortHabits(activeHabits.filter(h=>h.freq.unit!=="total"&&!isHabitMutedMK(h.id,mk))).map(h=>{
+    const done=getHabitDays(h.id).length; const target=getTarget(h);
+    const expected=(refDay/dim)*target; const frac=getPaceFraction(done,target,refDay,dim);
+    return{...h,done,target,expected,frac};
+  }).sort((a,b)=>a.frac-b.frac);
+
+  const tabs=[{key:"today",label:"☀️ Today"},{key:"calendar",label:"📅 Cal"},{key:"dock",label:"✦ Habits"},{key:"pace",label:"〜 Pace"}];
+
+  return (
+    <div style={{minHeight:"100vh",background:"#F2F0ED",fontFamily:"'Inter',system-ui,sans-serif",color:"#1A1A2E",maxWidth:520,margin:"0 auto"}}>
+
+      {/* Header */}
+      <div style={{background:"#1A1A2E",color:"#F9F7F4",padding:"14px 16px 10px",position:"sticky",top:0,zIndex:50}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <button onClick={()=>setShowYearly(true)} style={{background:"rgba(255,255,255,0.18)",border:"none",color:"#F9F7F4",width:32,height:32,borderRadius:8,cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}} title="Yearly stats">📊</button>
+          </div>
+          <div style={{textAlign:"center"}}>
+            <div style={{fontSize:9,letterSpacing:2.5,textTransform:"uppercase",opacity:0.4,marginBottom:1}}>Habbit</div>
+            <div style={{fontSize:19,fontWeight:700,letterSpacing:-0.5}}>{MONTHS[month]} {year}</div>
+          </div>
+          <button onClick={openAdd} style={{background:"#4ECDC4",border:"none",color:"#1A1A2E",padding:"0 14px",height:32,borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:700,whiteSpace:"nowrap"}}>+ Habit</button>
+        </div>
+        <div style={{display:"flex",background:"rgba(255,255,255,0.08)",borderRadius:10,padding:3,gap:3}}>
+          {tabs.map(({key,label})=>(
+            <button key={key} onClick={()=>setView(key)}
+              style={{flex:1,padding:"7px 0",borderRadius:8,border:"none",cursor:"pointer",background:view===key?"#fff":"transparent",color:view===key?"#1A1A2E":"rgba(255,255,255,0.55)",fontWeight:700,fontSize:10}}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Logging banner */}
+      {selected&&selHabit&&view==="calendar"&&(
+        <div style={{background:selColor,color:"#fff",padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",fontSize:13,fontWeight:600}}>
+          <span>Tap any day → <b>{selHabit.name}</b></span>
+          <button onClick={()=>setSelected(null)} style={{background:"rgba(255,255,255,0.25)",border:"none",color:"#fff",borderRadius:8,padding:"4px 10px",cursor:"pointer",fontSize:12,fontWeight:700}}>Done</button>
+        </div>
+      )}
+
+      {/* ══ TODAY VIEW ══ */}
+      {view==="today"&&(
+        <div style={{padding:"14px 14px 32px"}}>
+          {/* Day navigation */}
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+            <button onClick={prevDay} style={{background:"none",border:"1.5px solid #ddd",color:"#555",width:36,height:36,borderRadius:10,cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>‹</button>
+            <div style={{textAlign:"center"}}>
+              <div style={{fontSize:16,fontWeight:800}}>{DAY_NAMES[dowOf(viewDay.y,viewDay.m,viewDay.d)]}, {MONTHS[viewDay.m]} {viewDay.d}</div>
+              {!isViewingToday&&<button onClick={()=>setViewDay({y:todayY,m:todayM,d:todayD})} style={{fontSize:11,color:"#4ECDC4",background:"none",border:"none",cursor:"pointer",fontWeight:700,marginTop:2}}>← Back to today</button>}
+            </div>
+            <button onClick={nextDay} disabled={isViewingToday}
+              style={{background:"none",border:"1.5px solid #ddd",color:isViewingToday?"#ddd":"#555",width:36,height:36,borderRadius:10,cursor:isViewingToday?"default":"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>›</button>
+          </div>
+
+          {/* Habit list for viewDay — reuse DayView logic inline */}
+          {(()=>{
+            const dateStr=`${viewDay.y}-${String(viewDay.m+1).padStart(2,"0")}-${String(viewDay.d).padStart(2,"0")}`;
+            const vdow=dowOf(viewDay.y,viewDay.m,viewDay.d);
+            const habitList=activeHabits.filter(h=>!isMutedOnDate(muteRanges,h.id,dateStr)&&h.freq.unit!=="total").map(h=>{
+              const days=(completions[vMK]?.[h.id])||[];
+              const done=days.includes(viewDay.d);
+              const doneCount=days.length; const target=computeTarget(h.freq,vDim);
+              const expected=(viewDay.d/vDim)*target; const behind=doneCount<expected-0.5;
+              const pinned=(h.pinnedDays||[]).includes(vdow);
+              const due=h.freq.unit==="day"||pinned||behind;
+              return{...h,done,due,behind};
+            });
+            const totalHabits=activeHabits.filter(h=>h.freq.unit==="total").map(h=>{
+              const allDone=getAllTimeDone(h.id); const days=(completions[vMK]?.[h.id])||[];
+              const done=days.includes(viewDay.d);
+              return{...h,done,due:allDone<h.freq.times,isTotal:true,allDone};
+            });
+            const due=[...habitList.filter(h=>h.due),...totalHabits.filter(h=>h.due)];
+            const notDue=[...habitList.filter(h=>!h.due),...totalHabits.filter(h=>!h.due)];
+            // Sort done to bottom within "due"
+            const dueSorted=[...due.filter(h=>!h.done),...due.filter(h=>h.done)];
+            const doneCount=due.filter(h=>h.done).length;
+
+            return (
+              <>
+                <div style={{fontSize:12,color:"#888",marginBottom:14}}>
+                  {doneCount} of {due.length} done
+                  {due.length>0&&<span style={{marginLeft:8,display:"inline-block",background:doneCount===due.length?"#3EC9A7":"#F2F0ED",color:doneCount===due.length?"#fff":"#888",borderRadius:20,padding:"1px 9px",fontWeight:700,fontSize:11,border:"1px solid #ddd"}}>{doneCount===due.length?"✓ All done":`${due.length-doneCount} left`}</span>}
+                </div>
+                {due.length>0&&(
+                  <div style={{marginBottom:20}}>
+                    <div style={{fontSize:10,fontWeight:700,letterSpacing:1.5,textTransform:"uppercase",color:"#aaa",marginBottom:10}}>Due</div>
+                    {dueSorted.map(habit=>{
+                      const c=PALETTE[habit.colorIdx%PALETTE.length]; const icon=ICONS[habit.iconIdx%ICONS.length]; const done=habit.done;
+                      return (
+                        <div key={habit.id} onClick={()=>toggleDayCompletion(habit.id,vMK,viewDay.d)}
+                          style={{display:"flex",alignItems:"center",gap:12,background:done?c.lt:"#fff",borderRadius:14,padding:"13px 14px",marginBottom:8,
+                            boxShadow:done?`0 0 0 1.5px ${c.bg}44`:"0 1px 4px rgba(0,0,0,0.07)",cursor:"pointer",transition:"all .15s",opacity:done?0.7:1}}>
+                          <div style={{width:26,height:26,borderRadius:"50%",flexShrink:0,border:`2.5px solid ${done?c.bg:"#ddd"}`,background:done?c.bg:"transparent",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,color:"#fff"}}>{done?"✓":""}</div>
+                          <div style={{width:34,height:34,borderRadius:10,background:c.lt,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,border:`1.5px solid ${c.bg}44`,flexShrink:0}}>{icon}</div>
+                          <div style={{flex:1}}>
+                            <div style={{fontWeight:700,fontSize:14,textDecoration:done?"line-through":"none",color:done?"#bbb":"#1A1A2E"}}>{habit.name}</div>
+                            <div style={{fontSize:10,color:"#ccc",marginTop:1}}>{habit.isTotal?`${habit.allDone}/${habit.freq.times} total`:freqLabel(habit.freq,habit.pinnedDays)}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {notDue.length>0&&(
+                  <div>
+                    <div style={{fontSize:10,fontWeight:700,letterSpacing:1.5,textTransform:"uppercase",color:"#ccc",marginBottom:10}}>Not Due</div>
+                    {notDue.map(habit=>{
+                      const c=PALETTE[habit.colorIdx%PALETTE.length]; const icon=ICONS[habit.iconIdx%ICONS.length]; const done=habit.done;
+                      return (
+                        <div key={habit.id} onClick={()=>toggleDayCompletion(habit.id,vMK,viewDay.d)}
+                          style={{display:"flex",alignItems:"center",gap:12,background:done?c.lt:"#fff",borderRadius:14,padding:"11px 14px",marginBottom:7,boxShadow:"0 1px 3px rgba(0,0,0,0.04)",cursor:"pointer",opacity:0.65}}>
+                          <div style={{width:22,height:22,borderRadius:"50%",flexShrink:0,border:`2px solid ${done?c.bg:"#eee"}`,background:done?c.bg:"transparent",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#fff"}}>{done?"✓":""}</div>
+                          <div style={{width:28,height:28,borderRadius:8,background:c.lt,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,flexShrink:0}}>{icon}</div>
+                          <div style={{flex:1}}><div style={{fontWeight:600,fontSize:13}}>{habit.name}</div><div style={{fontSize:10,color:"#ccc"}}>{freqLabel(habit.freq,habit.pinnedDays)}</div></div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* ══ CALENDAR ══ */}
+      {view==="calendar"&&(
+        <div style={{padding:"14px 12px"}}>
+          {/* Month nav on calendar page */}
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+            <button onClick={prevMonth} style={{background:"#fff",border:"1.5px solid #eee",color:"#555",width:34,height:34,borderRadius:9,cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 1px 3px rgba(0,0,0,0.06)"}}>‹</button>
+            <div style={{fontSize:14,fontWeight:700,color:"#555"}}>{MONTHS[month]} {year}</div>
+            <button onClick={nextMonth} style={{background:"#fff",border:"1.5px solid #eee",color:"#555",width:34,height:34,borderRadius:9,cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 1px 3px rgba(0,0,0,0.06)"}}>›</button>
+          </div>
+
+          {/* Habit quick-select strip */}
+          {!selected&&(
+            <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:8,scrollbarWidth:"none",marginBottom:4}}>
+              {sortHabits(activeHabits).map(h=>{
+                const c=PALETTE[h.colorIdx%PALETTE.length]; const icon=ICONS[h.iconIdx%ICONS.length];
+                return (
+                  <button key={h.id} onClick={()=>setSelected(h.id)}
+                    style={{display:"flex",alignItems:"center",gap:5,padding:"5px 10px",borderRadius:20,border:`1.5px solid ${c.bg}`,background:"#fff",cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,fontSize:12,fontWeight:600,color:"#333"}}>
+                    <span style={{fontSize:14}}>{icon}</span>{h.name}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:4}}>
+            {["S","M","T","W","T","F","S"].map((d,i)=><div key={i} style={{textAlign:"center",fontSize:10,fontWeight:700,color:"#aaa"}}>{d}</div>)}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
+            {cells.map((day,idx)=>{
+              if(day===null)return<div key={`e${idx}`}/>;
+              const habitsHere=sortHabits(habits.filter(h=>h.status!=="archived"&&getHabitDays(h.id).includes(day)));
+              const isActive=selected&&getHabitDays(selected).includes(day);
+              const isCalSelected=calDay&&calDay.d===day&&calDay.m===month&&calDay.y===year;
+              return (
+                <div key={day}
+                  onClick={()=>handleDayTap(day)}
+                  onMouseDown={()=>handleDayPressStart(day)}
+                  onMouseUp={handleDayPressEnd}
+                  onTouchStart={()=>handleDayPressStart(day)}
+                  onTouchEnd={handleDayPressEnd}
+                  style={{minHeight:58,background:isActive?(selColor+"22"):isCalSelected?"#EEF6FF":"#fff",
+                    border:isActive?`2px solid ${selColor}`:isCalSelected?"2px solid #4A90E2":isToday(day)?"2px solid #1A1A2E":selected?"2px dashed #ccc":"2px solid transparent",
+                    borderRadius:10,padding:"4px 3px 3px",boxShadow:"0 1px 3px rgba(0,0,0,0.06)",cursor:"pointer",transition:"border .1s,background .1s",userSelect:"none"}}>
+                  <div style={{fontSize:10,fontWeight:isToday(day)?800:500,color:isToday(day)?"#1A1A2E":"#777",textAlign:"right",marginBottom:2}}>{day}</div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:2,justifyContent:"center"}}>
+                    {habitsHere.map(h=>{const c=PALETTE[h.colorIdx%PALETTE.length];return<div key={h.id} title={h.name} style={{width:9,height:9,borderRadius:"50%",background:c.bg,flexShrink:0}}/>;})}</div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Hint text */}
+          <div style={{textAlign:"center",fontSize:11,color:"#bbb",marginTop:10}}>
+            {selected?"Tap days to log":"Tap a habit above to log · Tap a day to see it · Long press to edit"}
+          </div>
+
+          {/* Mini day list at bottom of calendar */}
+          {calDay&&(
+            <MiniDayList
+              y={calDay.y} m={calDay.m} d={calDay.d}
+              habits={habits} completions={completions} muteRanges={muteRanges}
+              onToggle={toggleDayCompletion}
+              onOpenDay={()=>setDayViewOpen(true)}
+            />
+          )}
+        </div>
+      )}
+
+      {/* ══ HABITS DOCK ══ */}
+      {view==="dock"&&(
+        <div style={{padding:"14px 12px 32px"}} onClick={()=>{if(selected)setSelected(null);}}>
+          {groups.map(group=>{
+            const gHabits=sortHabits(activeHabits.filter(h=>h.group===group));
+            const isCollapsed=collapsed[group];
+            return (
+              <div key={group} style={{marginBottom:20}}>
+                <div onClick={e=>{e.stopPropagation();setCollapsed(p=>({...p,[group]:!p[group]}));}}
+                  style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 4px",cursor:"pointer",userSelect:"none",marginBottom:6}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <div style={{fontSize:10,fontWeight:800,letterSpacing:2,textTransform:"uppercase",color:"#888"}}>{group}</div>
+                    <div style={{fontSize:10,color:"#bbb"}}>({gHabits.length})</div>
+                  </div>
+                  <div style={{fontSize:14,color:"#bbb",display:"inline-block",transition:"transform .2s",transform:isCollapsed?"rotate(-90deg)":"rotate(0deg)"}}>▾</div>
+                </div>
+                {!isCollapsed&&gHabits.map(habit=>{
+                  const c=PALETTE[habit.colorIdx%PALETTE.length]; const icon=ICONS[habit.iconIdx%ICONS.length];
+                  const mutedNow=isHabitMuted(habit.id); const mutedMonth=isHabitMutedMK(habit.id,mk);
+                  const isTotal=habit.freq.unit==="total";
+                  const done=isTotal?getAllTimeDone(habit.id):getHabitDays(habit.id).length;
+                  const target=isTotal?habit.freq.times:getTarget(habit);
+                  const remaining=getRemaining(habit); const pct=Math.min(1,done/target); const isSel=selected===habit.id;
+                  const activeMute=(muteRanges[habit.id]||[]).find(r=>r.start<=todayISO&&todayISO<=r.end);
+                  const muteLabel=activeMute?(activeMute.end==="2099-12-31"?"Paused indefinitely":`Paused until ${activeMute.end.slice(5).replace("-","/")}`):(mutedMonth?"Paused this month":null);
+                  return (
+                    <div key={habit.id}
+                      onClick={e=>{e.stopPropagation();if(!mutedNow&&!mutedMonth){setSelected(isSel?null:habit.id);if(!isSel)setView("calendar");}}}
+                      style={{background:mutedMonth?"#FAFAFA":isSel?c.lt:"#fff",borderRadius:14,padding:"12px 14px 10px",marginBottom:8,
+                        boxShadow:isSel?`0 0 0 2px ${c.bg}66`:"0 1px 4px rgba(0,0,0,0.06)",
+                        cursor:(mutedNow||mutedMonth)?"default":"pointer",opacity:mutedMonth?0.6:1,transition:"all .15s"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                        <div style={{display:"flex",alignItems:"center",gap:8}}>
+                          <div style={{width:30,height:30,borderRadius:9,background:c.lt,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,border:`1.5px solid ${c.bg}44`,flexShrink:0,filter:mutedMonth?"grayscale(0.8)":"none"}}>{icon}</div>
+                          <div>
+                            <div style={{fontWeight:700,fontSize:14}}>{habit.name}</div>
+                            <div style={{fontSize:10,color:"#aaa"}}>{muteLabel?<span style={{color:"#FFA726"}}>⏸ {muteLabel}</span>:isTotal?`${done}/${target} total`:`${freqLabel(habit.freq,habit.pinnedDays)} · ${done}/${target}`}</div>
+                          </div>
+                        </div>
+                        <div style={{display:"flex",alignItems:"center",gap:4}} onClick={e=>e.stopPropagation()}>
+                          {isSel&&<span style={{fontSize:10,background:c.bg,color:"#fff",borderRadius:6,padding:"2px 7px",fontWeight:700}}>Logging</span>}
+                          <HabitMenu habit={habit} isMuted={!!(mutedNow||mutedMonth)} onEdit={()=>openEdit(habit)} onArchive={()=>archiveHabit(habit.id)} onDelete={()=>deleteHabit(habit.id)} onPause={()=>setModal({mode:"pause",habit})} onUnmute={()=>unmute(habit.id)}/>
+                        </div>
+                      </div>
+                      <div style={{height:3,background:c.lt,borderRadius:3,marginBottom:8,overflow:"hidden"}}><div style={{height:"100%",width:`${pct*100}%`,background:mutedMonth?"#ddd":c.bg,borderRadius:3,transition:"width .3s"}}/></div>
+                      {!mutedMonth&&<DotStrip count={remaining} color={c.bg} bgColor={isSel?c.lt:"#fff"} isSel={isSel}/>}
+                      {mutedMonth&&<div style={{fontSize:11,color:"#ccc",fontStyle:"italic"}}>Not tracking right now</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+          {archivedHabits.length>0&&(
+            <div style={{marginTop:8}}>
+              <div onClick={()=>setShowArchived(o=>!o)} style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",padding:"6px 4px",marginBottom:6}}>
+                <div style={{fontSize:10,fontWeight:700,letterSpacing:1.5,textTransform:"uppercase",color:"#ccc"}}>Archived ({archivedHabits.length})</div>
+                <div style={{fontSize:12,color:"#ccc"}}>{showArchived?"▴":"▾"}</div>
+              </div>
+              {showArchived&&archivedHabits.map(habit=>{
+                const c=PALETTE[habit.colorIdx%PALETTE.length]; const icon=ICONS[habit.iconIdx%ICONS.length]; const tot=getAllTimeDone(habit.id);
+                return (
+                  <div key={habit.id} style={{background:"#fff",borderRadius:12,padding:"10px 14px",marginBottom:7,opacity:0.5,display:"flex",alignItems:"center",gap:10}}>
+                    <div style={{width:26,height:26,borderRadius:8,background:c.lt,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,filter:"grayscale(1)"}}>{icon}</div>
+                    <div style={{flex:1}}><div style={{fontWeight:600,fontSize:13,color:"#888"}}>{habit.name}</div><div style={{fontSize:10,color:"#ccc"}}>{tot} logged total</div></div>
+                    <button onClick={()=>restoreHabit(habit.id)} style={{fontSize:11,fontWeight:700,border:"1px solid #ddd",background:"#fff",borderRadius:8,padding:"3px 9px",cursor:"pointer",color:"#888"}}>Restore</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ══ PACE ══ */}
+      {view==="pace"&&(
+        <div style={{padding:"14px 12px 32px"}}>
+          <div style={{background:"#fff",borderRadius:14,padding:"14px 16px",marginBottom:18,boxShadow:"0 1px 4px rgba(0,0,0,0.05)"}}>
+            <div style={{fontSize:13,fontWeight:700,marginBottom:2}}>{MONTHS[month]} check-in</div>
+            <div style={{fontSize:12,color:"#999"}}>Day {refDay} of {dim} — {Math.round((refDay/dim)*100)}% through the month.</div>
+          </div>
+          {paceHabits.map(habit=>{
+            const c=PALETTE[habit.colorIdx%PALETTE.length]; const icon=ICONS[habit.iconIdx%ICONS.length];
+            const{done,target,expected,frac}=habit;
+            const pct=target>0?Math.min(1,done/target):1; const expPct=target>0?Math.min(1,expected/target):refDay/dim;
+            const delta=done-expected; const feeling=frac>=1.0?"ahead":frac>=0.75?"close":"behind";
+            const feelColor=feeling==="ahead"?"#3EC9A7":feeling==="close"?"#aaa":"#90A4AE";
+            const feelLabel=feeling==="ahead"?"Going great":feeling==="close"?"Almost there":"A little behind";
+            return (
+              <div key={habit.id} style={{background:"#fff",borderRadius:14,padding:"14px 14px 12px",marginBottom:10,boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <div style={{width:30,height:30,borderRadius:9,background:c.lt,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,border:`1.5px solid ${c.bg}33`,flexShrink:0}}>{icon}</div>
+                    <div><div style={{fontWeight:700,fontSize:14}}>{habit.name}</div><div style={{fontSize:10,color:"#bbb"}}>{done} of {target} this month</div></div>
+                  </div>
+                  <div style={{textAlign:"right"}}><div style={{fontSize:11,color:feelColor,fontWeight:600}}>{feelLabel}</div><div style={{fontSize:10,color:"#ccc"}}>{delta>0?"+":""}{delta.toFixed(1)} vs pace</div></div>
+                </div>
+                <div style={{position:"relative",height:6,background:"#F0F0EE",borderRadius:4,marginBottom:6}}>
+                  <div style={{position:"absolute",top:0,left:0,height:"100%",width:`${pct*100}%`,background:c.bg,borderRadius:4,opacity:0.8,transition:"width .4s"}}/>
+                  <div style={{position:"absolute",top:-2,bottom:-2,left:`clamp(2px,${expPct*100}%,calc(100% - 2px))`,width:2,background:"#ccc",borderRadius:1}}/>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div style={{fontSize:10,color:"#ccc"}}>{expected>0?`~${Math.round(expected)} expected by today`:""}</div>
+                  <button onClick={()=>{setSelected(habit.id);setView("calendar");}} style={{fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:8,border:"1px solid #eee",background:"#fff",color:"#888",cursor:"pointer"}}>Log</button>
+                </div>
+              </div>
+            );
+          })}
+          {paceHabits.length===0&&<div style={{textAlign:"center",padding:"40px 20px",color:"#bbb",fontSize:13}}>No active habits this month.</div>}
+        </div>
+      )}
+
+      {/* Modals */}
+      {modal?.mode==="add"&&<Sheet title="New Habit" onClose={closeModal}><HabitForm form={form} setForm={setForm} existingGroups={existingGroups} daysInMonth={dim} onSubmit={submitAdd} onCancel={closeModal} submitLabel="Add Habit"/></Sheet>}
+      {modal?.mode==="edit"&&<Sheet title={`Edit "${modal.habit.name}"`} onClose={closeModal}><HabitForm form={form} setForm={setForm} existingGroups={existingGroups} daysInMonth={dim} onSubmit={submitEdit} onCancel={closeModal} submitLabel="Save Changes"/></Sheet>}
+      {modal?.mode==="pause"&&<PausePicker habit={modal.habit} onClose={closeModal} onConfirm={(start,end)=>{applyPause(modal.habit.id,start,end);closeModal();}}/>}
+      {showYearly&&<YearlyStats habits={habits.filter(h=>h.status!=="archived"||getAllTimeDone(h.id)>0)} completions={completions} year={year} onClose={()=>setShowYearly(false)}/>}
+      {dayViewOpen&&calDay&&<DayView y={calDay.y} m={calDay.m} d={calDay.d} habits={habits} completions={completions} muteRanges={muteRanges} onToggle={toggleDayCompletion} onClose={()=>setDayViewOpen(false)}/>}
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(HabitTracker));
+  </script>
+  <script>if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});</script>
+</body>
+</html>
