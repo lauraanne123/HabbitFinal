@@ -424,7 +424,7 @@ function MiniDayList({y,m,d,habits,completions,muteRanges,onToggle,onOpenDay}) {
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
-export default function HabitTracker() {
+function HabitTracker() {
   const now=new Date(); const todayD=now.getDate(); const todayM=now.getMonth(); const todayY=now.getFullYear();
   const todayDow=now.getDay(); const todayISO=fmtDate(now);
 
